@@ -1,0 +1,675 @@
+---
+title: "Beer Review Analysis"
+author: Eric Born - CS544 Final Project
+output: html_document
+---
+```{r include = FALSE}
+#############
+# Start setup
+#############
+
+# Install rmarkdown, plyr and plotly
+#if (!is.element("rmarkdown", installed.packages()[,"Package"]))
+#  install.packages("rmarkdown", repos="http://cran.us.r-project.org", dependencies = TRUE)
+
+if (!is.element("plyr", installed.packages()[,"Package"]))
+  install.packages("plyr", repos="http://cran.us.r-project.org", dependencies = TRUE)
+
+if (!is.element("plotly", installed.packages()[,"Package"]))
+  install.packages("plotly", repos="http://cran.us.r-project.org", dependencies = TRUE)
+
+# Load plyr, plotly and sampling libraries
+#library(rmarkdown)
+library(plyr)
+library(plotly)
+library("sampling")
+
+###############
+# Start data storage
+# Set path to the csv file location
+setwd("C:/Users/TomBrody/Desktop/School/544/Final project")
+
+####
+# cleanup steps
+####
+
+# Import the csv as a dataframe
+beer.dirty <- read.csv("beer_reviews_dirty.csv")
+
+# Remove columns 3, 5-7, 9-10 and 13 which are not being used during this analysis
+beer.dirty <- beer.dirty[, c(1,2,4,8,11,12)]
+
+# Remove all rows with the a beer review score of 0 (7 rows)
+beer.dirty <- beer.dirty[!beer.dirty$review_overall %in% 0, ]
+
+# Create a table with beer names and total frequency
+dirty.beer.table <- data.frame(table(beer.dirty$beer_name))
+
+# Isolate out just the beer names with a single review
+dirty.beer.list <- dirty.beer.table[dirty.beer.table$Freq < 2, ]
+
+# Remove all beers from the main dataset that had only 1 review
+beer <- beer.dirty[!beer.dirty$beer_name %in% dirty.beer.list$Var1, ]
+
+# drop empty factor levels
+beer <- droplevels(beer)
+
+# Reset rownames from 1 to n
+rownames(beer) <- 1:nrow(beer)
+
+#############
+# End setup
+#############
+
+#############
+# Start basic stats
+#############
+# table with counts of total reviews by beer
+beer.table <- data.frame(table(beer$beer_name))
+
+# Create df for basic stats
+basic.stats <- data.frame("Measure" = c("Total rows", "Total distinct Beers", 
+                                        "Average reviews per beer", 
+                                        "Total distinct beers after cleaning", 
+                                        "Average reviews after cleaning", 
+                                        "Average ABV","Highest ABV"),
+                          "Total" = c(nrow(beer), length(dirty.beer.table$Var1), 
+                                      round(mean(dirty.beer.table$Freq, digits = 0)),
+                                      length(beer.table$Var1), 
+                                      round(mean(beer.table$Freq), digits = 0),
+                                      round(mean(beer$beer_abv, na.rm = TRUE), digits = 1),
+                                      max(beer$beer_abv, na.rm = TRUE)))
+
+# reset factors to order by Measure column
+basic.stats$Measure <- factor(basic.stats$Measure, 
+                              levels = c(as.character(basic.stats$Measure)))
+
+# Convert factors to character
+basic.stats$Measure <- as.character(basic.stats$Measure)
+
+
+# create table for top 10 abv's, total reviews and average review score
+stat.table <- plot_ly(
+  type = 'table',
+  height = 250,
+  header = list(
+    values = c('Measure', 'Total'),
+    align = c('center'),
+    line = list(width = 1, color = 'black'),
+    fill = list(color = c('#1f77b4', '#1f77b4')),
+    font = list(famile = 'Arial', size = 14, color = 'white')
+  ),
+  cells = list(
+    values = rbind(
+      basic.stats$Measure, basic.stats$Total),
+    align = c('center'),
+    line = list(width = 1, color = 'black')
+  ))
+
+#############
+# End basic stats
+#############
+
+#############
+# Start Top 10 reviewed beers by abv
+#############
+# Top 10 reviewed beers by abv 133896
+abv.top10 <- sort(table(beer$beer_abv), decreasing = TRUE)[1:10]
+
+# Convert to dataframe
+abv.top10.df <- data.frame(table(beer$beer_abv))
+
+# Rename column
+names(abv.top10.df) <- c("beer_abv", "Freq")
+
+# Calculate average review scores for top 10 beers
+abv.top10.averages <- aggregate(review_overall ~ beer_abv, data = beer, mean)
+
+# Round averages
+abv.top10.averages$review_overall <- round(abv.top10.averages$review_overall, digits = 2)
+
+# Merge beer abv, overall review and total reviews
+abv.top10.df <- merge(x = abv.top10.averages, y = abv.top10.df, by = "beer_abv", all = FALSE)
+
+attach(abv.top10.df)
+abv.top10.df <- abv.top10.df[order(-Freq),]
+detach(abv.top10.df)
+
+# Limit to top 10
+abv.top10.df <- abv.top10.df[1:10, ]
+
+# Reset rownames from 1 to n
+rownames(abv.top10.df) <- 1:nrow(abv.top10.df)
+
+# create table for top 10 abv's, total reviews and average review score
+abv.table <- plot_ly(
+  type = 'table',
+  height = 300,
+  width = 500,
+  header = list(
+    values = c("Beer ABV", "Total Reviews", "Average Rating"),
+    align = c('center'),
+    line = list(width = 1, color = 'black'),
+    fill = list(color = c('#1f77b4', '#1f77b4')),
+    font = list(famile = 'Arial', size = 14, color = 'white')
+  ),
+  cells = list(
+    values = rbind(abv.top10.df$beer_abv, abv.top10.df$Freq, 
+                   abv.top10.df$review_overall),
+    align = c('center'),
+    line = list(width = 1, color = 'black')
+  ))
+
+#############
+# End Top 10 reviewed beers by abv
+#############
+
+#############
+# Start top 10 most reviewed beer by name 
+#############
+
+# Create counts by beer name
+beer.name.count <- count(beer, vars = c("beer_name", "brewery_name"))
+
+# order beer.name.count highest to lowest
+attach(beer.name.count)
+beer.name.count <- beer.name.count[order(-freq),]
+detach(beer.name.count)
+
+# beer.top10
+beer.top10 <- beer.name.count[1:10, ]
+
+# Reset rownames from 1 to n
+rownames(beer.top10) <- 1:nrow(beer.top10)
+
+# drop empty factor levels
+beer.top10 <- droplevels(beer.top10)
+
+# reset factors to order by frequency decending
+beer.top10$beer_name <- factor(beer.top10$beer_name, 
+                               levels = c(as.character(beer.top10$beer_name)))
+
+#############
+# End top 10 most reviewed beer by name bar graph
+#############
+
+#############
+# Start Average ratings for the top 10 most reviewed beers
+#############
+
+# Calculate average review scores for top 10 beers
+beer.averages <- aggregate(review_overall ~ beer_name, data = beer, mean)
+
+# Round averages
+beer.averages$review_overall <- round(beer.averages$review_overall, digits = 2)
+
+# Merge averages with top 10 most reviewed beers
+beer.top10.avg <- merge(x = beer.averages, y = beer.top10, by = "beer_name", all = FALSE)
+
+# drop empty factor levels
+beer.top10.avg <- droplevels(beer.top10.avg)
+
+# Reorder by total reviews
+attach(beer.top10.avg)
+beer.top10.avg <- beer.top10.avg[order(-freq),]
+detach(beer.top10.avg)
+
+
+# Reset rownames from 1 to n
+rownames(beer.top10.avg) <- 1:nrow(beer.top10.avg)
+
+# reset factors to order by frequency decending
+beer.top10.avg$beer_name <- factor(beer.top10.avg$beer_name, 
+                                   levels = c(as.character(beer.top10.avg$beer_name)))
+
+#####
+# Plot 
+#####
+# Create Y axis label
+# Display top 10 most reviewed beers by name
+y <- list(title = "Number of Reviews")
+x <- list(title = 'Beer Name')
+name.label <- c('4.2 average rating','4.2 average rating','4.2 average rating','4.3 average rating',
+           '4.1 average rating','4.2 average rating','4.2 average rating','4.3 average rating',
+           '4.6 average rating','4.3 average rating') 
+
+plot.top10.name <- plot_ly(beer.top10.avg, x = ~beer_name, y = ~freq, type = 'bar', 
+                           text = name.label) %>% 
+  layout(yaxis = y, title = "Top 10 most reviewed beers by name", xaxis = x)
+
+#############
+# End Average ratings for the top 10 most reviewed beers
+#############
+
+#############
+# Start Top 10 most reviewed by style
+#############
+
+# Most reviewed style
+beer.style.count <- count(beer, vars = "beer_style")
+
+# order beer.style.count highest to lowest
+attach(beer.style.count)
+beer.style.count <- beer.style.count[order(-freq),]
+detach(beer.style.count)
+
+# Select only the top 10
+style.top10 <- beer.style.count[1:10, ]
+
+# Reset rownames from 1 to n
+rownames(style.top10) <- 1:nrow(style.top10)
+
+# drop empty factor levels
+style.top10 <- droplevels(style.top10)
+
+# reset factors to order by frequency decending
+style.top10$beer_style <- factor(style.top10$beer_style, 
+                                 levels = c(as.character(style.top10$beer_style)))
+
+#Display top 10 most reviewed beers by style
+y <- list(title = "Number of Reviews")
+x <- list(title = 'Beer Name')
+style.label <- c('3.97 average rating','4 average rating','3.85 average rating','4.02 average rating',
+           '4.03 average rating','3.9 average rating','3.78 average rating', '3.91 average rating'
+           ,'3.42 average rating', '3.87 average rating') 
+
+plot.top10.style <- plot_ly(style.top10, x = ~beer_style, y = ~freq, type = 'bar', 
+                            text = style.label) %>% 
+  layout(xaxis = x, yaxis = y, title = "Top 10 most reviewed beers by style")
+
+#############
+# End Top 10 most Reviews by style bar graph
+#############
+
+#############
+# Start Top 10 most Reviews by style with averages table
+#############
+
+# Calculate average review scores for top 10 beers
+style.averages <- aggregate(review_overall ~ beer_style, data = beer, mean)
+
+# Round averages
+style.averages$review_overall <- round(style.averages$review_overall, digits = 2)
+
+
+# Merge beer style, overall review and total reviews
+beer.top10.style.avg <- merge(x = style.averages, y = style.top10, by = "beer_style", 
+                              all = FALSE)
+
+attach(beer.top10.style.avg)
+beer.top10.style.avg <- beer.top10.style.avg[order(-review_overall),]
+detach(beer.top10.style.avg)
+
+# drop empty factor levels
+beer.top10.style.avg <- droplevels(beer.top10.style.avg)
+
+attach(beer.top10.style.avg)
+beer.top10.style.avg <- beer.top10.style.avg[order(-freq),]
+detach(beer.top10.style.avg)
+
+# reset factors to order by frequency decending
+beer.top10.style.avg$beer_style <- factor(beer.top10.style.avg$beer_style, 
+                                          levels = c(as.character(beer.top10.style.avg$beer_style)))
+
+# Reset rownames from 1 to n
+rownames(beer.top10.style.avg) <- 1:nrow(beer.top10.style.avg)
+
+# Revert factor levels to characters
+beer.top10.style.avg$beer_style <- as.character(beer.top10.style.avg$beer_style)
+
+# create table for top 10 styles, total reviews and average review score
+style.table <- plot_ly(
+  type = 'table',
+  height = 300,
+  header = list(
+    values = c("Beer Style", "Total Reviews", "Average Rating")
+  ),
+  cells = list(
+    values = rbind(beer.top10.style.avg$beer_style, beer.top10.style.avg$freq, 
+                   beer.top10.style.avg$review_overall)
+  ))
+
+#############
+# End Top 10 most Reviews by style with averages table
+#############
+
+#############
+# Start Top 10 by style with ABV boxplot
+#############
+
+# BOXPLOT top 10 beer styles and their ABV's
+# Create dataset that contains the top 10 most reviewed ABV's and abv
+top.10.abv <- beer[beer$beer_style %in% beer.top10.style.avg$beer_style, c(4,6)]
+
+# Reset rownames from 1 to n
+rownames(top.10.abv) <- 1:nrow(top.10.abv)
+
+# drop empty factor levels
+top.10.abv <- droplevels(top.10.abv)
+
+# Create boxplot based on top 10 beer styles with ABV information
+y <- list(title = "Beer Style")
+x <- list(title = 'ABV')
+abv.box <- plot_ly(top.10.abv, x = ~beer_abv, y = ~beer_style, type = 'box')%>% 
+  layout(xaxis = x, yaxis = y, title = "ABV distribution of top 10 beer styles")
+
+#############
+# End Top 10 by style with ABV boxplot
+#############
+
+#############
+# Start review breakdown table and chart creation
+#############
+
+# Create counts based upon review overall rating
+review <- count(beer, vars = "review_overall")
+
+# Reorder review table based upon review_overall column
+attach(review)
+review <- review[order(-review_overall), ]
+detach(review)
+
+# create table for top 10 abv's, total reviews and average review score
+review.table <- plot_ly(
+  type = 'table',
+  header = list(
+    values = c("Rating", "Total")
+  ),
+  cells = list(
+    values = rbind(
+      review$review_overall, review$freq)
+    
+  ))
+# Output table
+review.table
+
+# Create x and Y axis label
+# Create bar chart
+y <- list(title = "Number of Reviews")
+x <- list(title = 'Review Rating')
+plot.review <- plot_ly(review, x = ~review_overall, y = ~freq, type = 'bar') %>% 
+  layout(xaxis = x, yaxis = y, title = "Overall Review by rating")
+
+#############
+# End review breakdown table and chart creation
+#############
+
+#############
+# Start central limit theorem and histograms on overall_review ratings
+#############
+
+# Samples
+set.seed(3425)
+
+# Sample size and total samples
+x10 <- 10
+x20 <- 50
+x30 <- 100
+x40 <- 200
+
+samples <- 1000
+
+# Create place holder of 1000 0 values in xbar.1k variables
+xbar.1k10 <- numeric(samples)
+xbar.1k20 <- numeric(samples)
+xbar.1k30 <- numeric(samples)
+xbar.1k40 <- numeric(samples)
+
+# Replace each 0 value with a random value from the queries data set using sample
+for (i in 1: samples) {
+  xbar.1k10[i] <- mean(sample(beer$review_overall, size = x10, replace = TRUE))
+}
+
+for (i in 1: samples) {
+  xbar.1k20[i] <- mean(sample(beer$review_overall, size = x20, replace = TRUE))
+}
+
+for (i in 1: samples) {
+  xbar.1k30[i] <- mean(sample(beer$review_overall, size = x30, replace = TRUE))
+}
+
+for (i in 1: samples) {
+  xbar.1k40[i] <- mean(sample(beer$review_overall, size = x40, replace = TRUE))
+}
+
+# Create histogram plots from samples
+k10 <- plot_ly(x = xbar.1k10, type = "histogram", name = "10")
+k20 <- plot_ly(x = xbar.1k20, type = "histogram", name = "25")
+k30 <- plot_ly(x = xbar.1k30, type = "histogram", name = "75")
+k40 <- plot_ly(x = xbar.1k40, type = "histogram", name = "100")
+
+#############
+# End samples and hisgrams on overall_review ratings
+#############
+
+#############
+# Start Simple random sample without replacement
+#############
+
+# Set seed for repeatability
+set.seed(6546)
+
+# 36000 (~10%) Random sample without replace stored in variable s1
+s1 <- srswor(30000, nrow(beer))
+
+# Using variable s1 as the row index to map the results which are not equal to 0 
+# from beer into the sample.1 variable
+sample.1 <- beer[s1 != 0, ]
+
+# Output the differences in frequencies for each region
+round(table(beer$review_overall) / length(beer$review_overall), 3) -
+  round(table(sample.1$review_overall) / length(sample.1$review_overall), 3)
+#     original  sample
+# 1   - 0.007   0.007 
+# 1.5 - 0.009   0.009
+# 2   - 0.026   0.027
+# 2.5 - 0.041   0.041
+# 3   - 0.113   0.113
+# 3.5 - 0.187   0.184
+# 4   - 0.352   0.353
+# 4.5 - 0.204   0.204
+# 5   - 0.062   0.063
+
+# Store histogram from sample without replacement data
+plot.samp.wor <- plot_ly(sample.1, x = ~review_overall, type = "histogram",
+                         name = "SRSWOR")
+
+#############
+# End Simple random sample without replacement
+#############
+
+#############
+# Start systematic sampling
+#############
+
+# Set seed for repeatability
+set.seed(999)
+
+# Store the inclusion probabilities from beer dataset 
+# column review_overall with a sample size of 36000
+pik <- inclusionprobabilities(beer$review_overall, 250000)
+
+# Perform systematic sampling based on the inclusion probabilities captured from the dataset
+s <- UPsystematic(pik)
+
+# Store the rows using s as the index for the MU dataset
+samp.syst <- beer[s != 0, ]
+
+# Output the differences in frequencies for each region
+round(table(beer$review_overall) / length(beer$review_overall), 3) -
+  round(table(samp.syst$review_overall) / length(samp.syst$review_overall), 3)
+
+# Store histogram from sample without replacement data
+plot.samp.syst <- plot_ly(samp.syst, x = ~review_overall, type = "histogram",
+                          name = "Systematic Sampling")
+
+#############
+# End systematic sampling
+#############
+
+#############
+# Start stratified sampling
+#############
+
+# Set seed for repeatability
+set.seed(1234)
+
+# Order the beer dataset by the review_overall column
+order.index <- order(beer$review_overall)
+
+# Store ordered data
+data <- beer[order.index, ]
+
+# Store dataset frequency
+freq <- table(beer$review_overall)
+
+# create group sizes for each region
+sizes <- round(1000 * freq / sum(freq))
+
+# Create a stratified sample using the group sizes
+st <- strata(data, stratanames = c("review_overall"),
+             size = sizes, method = "srswor")
+
+# Draws the sample from the dataset
+samp.strat <- getdata(data, st)
+
+# Output the differences in frequencies for each region
+round(table(beer$review_overall) / length(beer$review_overall), 3) -
+  round(table(samp.strat$review_overall) / length(samp.strat$review_overall), 3)
+
+# Store histogram from sample without replacement data
+plot.samp.strat <- plot_ly(samp.strat, x = ~review_overall, type = "histogram",
+                           name = "Stratified")
+
+#############
+# End stratified sampling
+#############
+
+# Store histogram of review_overall data from original table
+plot.nosample <- plot_ly(beer, x = ~review_overall, type = "histogram",
+                         name = "All review ratings")
+
+```
+### Dataset Summary
+This dataset consists of 1.5M beer reviews from the website Beeradvocate.com. The set includes various pieces of information about the beer and the reviewers impressions of the taste. I chose to focus my analysis on the ABV, beer name, beer style and the overall impression categories.
+
+Source - https://data.world/socialmediadata/beeradvocate
+
+### At a glance
+Prior to performing any analysis I chose to do some cleaning of the dataset. I noticed there were a large number of beers with only 1 review. I took these as being reviewed erroneously due to a spelling error in the beers name or some other mistake by the user. Prior to removing these from the dataset there was a total of ~57K unique beers with an average of 28 reviews per beer. After removing all beers with a single review the total distinct beers sits at ~38K with an average of 41 reviews per beer. The average ABV across the dataset is 7.1 and the max is 43, that's one seriously strong beer!
+
+```{r echo = FALSE}
+# Basic stats table
+stat.table
+```
+
+### Top 10 by ABV
+Since I just spoke about ABV's, lets dive a little deeper into that category of the data. The following is a table displaying the 10 top ABV's determined by the total number of beers reviewed with that ABV.
+
+Clocking in almost twice as many reviews as number two are beers with an ABV of 5%. Some of the most notable beers in this category are Budweiser, Stella Artois, Heineken and Miller Highlife. These beers are all highly available in many stores and bars, so it's no wonder they have so many reviews! 
+
+While 5% may be the most reviewed, it's actually the worst in terms of average rating with a score of 3.64. The highest average rating is 9% ABV with a score of 3.96, followed by 7.5% at 3.94, then a three way tie between 7%, 8% and 10% at 3.93.
+
+Another interesting tidbit is that these top 10 ABV's make up 38.3% of the total dataset!
+```{r}
+paste(round(sum(abv.top10) / nrow(beer) * 100, digits = 1), "%", sep = '')
+```
+
+```{r echo = FALSE}
+# top 10 by abv table
+abv.table
+```
+
+### Top 10 beers by name
+
+Let's shift focus now and move over to the top 10 beers by name determined by the total number of reviews.
+
+As you can see from the chart below, Sierra Nevada brewing managed to achieve two different beers in the top 10 with their Celebration Ale coming in at number 3 with 3000 reviews and their Pale Ale at number 7 with almost 2600. 
+
+All 10 of these beers scored above a 4.0 average in the overall impression category with the lowest being the Arrogant Bastard ale from Stone brewing at 4.1 and the highest being Pliny The Elder from Russian River Brewing at 4.6.
+
+```{r echo = FALSE}
+# most reviewed beer by name
+plot.top10.name
+```
+
+### Top 10 beers by style
+
+Next up is our top 10 most reviewed beers by style. Our front runner here by over 30K reviews is the American IPA style with ~117K reviews, followed up by the double IPA at ~86K. The average review rating in this category is more diverse than the previous with the highest average being the American Double or Imperial Stout coming in at 4.03, and last place being the Fruit or Vegetable beer getting an average overall impression score of 3.42, a spread of 0.61 compared to 0.5 for the previous category.
+
+```{r echo = FALSE}
+# Draw Top 10 most Reviews by style bar graph
+plot.top10.style
+```
+
+### ABV Distribution by style
+
+Diving into the ABV distributions for the top 10 styles, we can see there are some pretty large differences between the group. Each has a slightly different quantile range and number of outliers. 
+
+The American Pale, IPA and Porter all have a short box indicating their inter-quartile range is relatively small. While on the other hand the American Strong Ale and the Imperial Stout both have a tall box, indicating their average range is larger. These are also the only two styles that do not have any outliers below their lower whisker.
+
+Both the Imperial Stout and Imperial IPA have the widest range at over a 30 point difference between their minimum and maximum ABV. 
+
+```{r echo = FALSE, warning = FALSE}
+# Top 10 by style with ABV boxplot
+abv.box
+```
+
+### Overall rating distribution
+Looking at the distribution for the rating provided by users in the "overall review" column we see the data is left skewed with the largest portions residing between 3.5-4.5 and 4 being the peak at nearly twice as high as 3.5 or 4.5.
+
+```{r echo = FALSE}
+# review breakdown table and chart creation
+plot.review
+```
+
+### Central Limit Theorem
+Let's further investigate this data by applying the central limit theorem. This theorem states that even if a distribution of sample means is not normally distributed, their normalized sums tends toward a normal distribution. This means that as the sample size increases and the sums are normalized, the distribution will also become more and more normalized. 
+
+Below are four histograms created using 1000 random samples from the "overall review" data with a sample size of 10, 50, 100 and 200. As the sample size increases the distribution becomes increasingly normalized, forming a bell shaped curve.
+
+```{r echo = FALSE}
+cat("population mean: ", round(mean(beer$review_overall), digits = 1),
+      " sd: " ,round(sd(beer$review_overall),digits = 2),
+      "\nSample size 10, mean: ", round(mean(xbar.1k10), digits = 1),
+      " sd: " ,round(sd(xbar.1k10),digits = 2), 
+      "\nSample size 50, mean: ", round(mean(xbar.1k20), digits = 1),
+      " sd: " ,round(sd(xbar.1k20),digits = 2),
+      "\nSample size 100, mean: ", round(mean(xbar.1k30), digits = 1),
+      " sd: " ,round(sd(xbar.1k30),digits = 2), 
+      "\nSample size 200, mean: ", round(mean(xbar.1k40), digits = 1),
+      " sd: " ,round(sd(xbar.1k40),digits = 2),sep = '')
+```
+
+```{r echo = FALSE}
+# Draw samples and hisgrams on overall_review ratings
+subplot(k10, k20, k30, k40, nrows = 2) %>% 
+  layout(title = "Overall Review Distribution")
+```
+
+### Sampling of review ratings
+By utilizing sampling techniques we are able to extract portions of a datasets to test theories or perform analysis work without having to utilize the entire dataset, all while maintaining the proportions of the original data. This can prove to be invaluable when the original dataset is too large to process for one reason or another. Care needs to be taken to ensure that the sampling methods used maintains a similar distribution as the original dataset or the analysis results could be severely skewed.
+
+Below I show charts based upon the "overall review" data using the original data and three different sampling techniques. Simple Random sampling without replacement, Systematic Sampling and stratified sampling.
+
+Simple Random without Replacement randomly selects from the dataset and does not return the data back to the set to be chosen again. This ensures each row selected will be unique and will not cause the sample to be skewed.
+
+Systematic sampling selects a number which will represent the first item to be included in the sample, then utilizes a sampling interval which determines how many items to skip over before selecting the next item for the sample. This is continued until the end of the population is reached.
+
+The last method is stratified sampling. First the population is divided into mutually exclusive sub-groups and from within those groups, members are randomly chosen to participate in the sample.
+
+Please note that each chart appears very similar in shape, but the number of samples taken for each is drastically different. The original dataset has 1.56M rows, but only 250K were used for systematic, 30K for Simple random sampling without replacement and 1k for stratified sampling. 
+
+While the shapes are very similar, upon closer inspection you can see that there are some variances. Within the systematic sampling chart the 3.5 value is only ~43K but the 4.5 is ~60k. On all of the other charts these two very close to being the same number. As I mentioned before sampling can prove to be invaluable when a dataset is simply too large to work with, but caution needs to be exercised as it can cause proportional skewing.
+
+```{r echo = FALSE}
+# Draw plots for all sampling methods
+subplot(plot.nosample, plot.samp.wor, plot.samp.syst, plot.samp.strat, nrows = 2)
+```
+
+### Conclusion
+This is a large and diverse dataset with many avenues to explore beyond what I touched upon in this report. I could see this data being used for data mining or predictive analytics to help breweries reach new customers who have liked other similar beers, or perhaps to brew a new beer in a popular style or ABV where they do not currently have a product.  
+<br>
+<br>
+<br>
+<br>
